@@ -37,14 +37,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('/accurate/login', [AccurateController::class, 'redirectToAccurate'])->name('accurate.login');
+    Route::get('/accurate/callback', [AccurateController::class, 'handleCallback']);
+    Route::get('/accurate/customers', [AccurateController::class, 'getCustomers']);
+    Route::get('/accurate/database', [AccurateController::class, 'getDb']);
+    Route::get('/accurate/items', [AccurateController::class, 'getItems'])->name('get.item');
+    Route::get('/accurate/analisa-harga-terakhir', [AccurateController::class, 'analisaHargaTerakhir'])->name('accurate.analisaHarga');
+    Route::post('/produk/print-pdf', [AccurateController::class, 'printPDF'])->name('produk.print-pdf');
 });
 
-Route::get('/accurate/login', [AccurateController::class, 'redirectToAccurate'])->name('accurate.login');
-Route::get('/accurate/callback', [AccurateController::class, 'handleCallback']);
-Route::get('/accurate/customers', [AccurateController::class, 'getCustomers']);
-Route::get('/accurate/database', [AccurateController::class, 'getDb']);
-Route::get('/accurate/items', [AccurateController::class, 'getItems'])->name('get.item');
-Route::get('/accurate/analisa-harga-terakhir', [AccurateController::class, 'analisaHargaTerakhir'])->name('accurate.analisaHarga');
-Route::post('/produk/print-pdf', [AccurateController::class, 'printPDF'])->name('produk.print-pdf');
 
 require __DIR__ . '/auth.php';
