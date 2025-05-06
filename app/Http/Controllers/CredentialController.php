@@ -29,7 +29,7 @@ class CredentialController extends Controller
         $request->validate([
             'client_id' => 'required|string',
             'client_secret' => 'required|string',
-            'redirect_uri' => 'required|url',
+
         ]);
 
         $user = auth()->user();
@@ -40,7 +40,6 @@ class CredentialController extends Controller
             [
                 'client_id' => $request->input('client_id'),
                 'client_secret' => $request->input('client_secret'),
-                'redirect_uri' => $request->input('redirect_uri'),
             ]
         );
 

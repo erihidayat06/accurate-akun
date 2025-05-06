@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\AccurateToken;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\AccurateCredential;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 
@@ -29,7 +31,7 @@ class AccurateController extends Controller
 
             $this->clientId = $credential->client_id;
             $this->clientSecret = $credential->client_secret;
-            $this->redirectUri = $credential->redirect_uri;
+            $this->redirectUri = config('services.accurate.redirect');
 
             return $next($request);
         });
@@ -108,9 +110,16 @@ class AccurateController extends Controller
         }
 
         $data = $response->json();
+        $user = Auth::user();
 
-        Session::put('access_token', $data['access_token']);
-        Session::put('refresh_token', $data['refresh_token']);
+        AccurateToken::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'access_token' => $data['access_token'],
+                'refresh_token' => $data['refresh_token'],
+                'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 3600),
+            ]
+        );
 
         Log::info('Access and refresh tokens stored in session', ['access_token' => $data['access_token']]);
 
@@ -121,11 +130,13 @@ class AccurateController extends Controller
 
     public function getDb()
     {
-        $accessToken = Session::get('access_token');
-        if (!$accessToken) {
+        $token = Auth::user()->accurateToken;
+        if (!$token || !$token->access_token) {
             return redirect('/accurate/login')->with('error', 'Access token tidak ditemukan.');
         }
 
+
+        $accessToken = $token->access_token;
         // Step 1: Get list of databases
         $dbList = Http::withToken($accessToken)->get('https://account.accurate.id/api/db-list.do');
         if (!$dbList->ok() || !isset($dbList['d'][0]['id'])) {
@@ -141,11 +152,12 @@ class AccurateController extends Controller
 
     public function getItems(Request $request)
     {
-        $accessToken = Session::get('access_token');
-
-        if (!$accessToken) {
+        $token = Auth::user()->accurateToken;
+        if (!$token || !$token->access_token) {
             return redirect('/accurate/login')->with('error', 'Access token tidak ditemukan.');
         }
+
+        $accessToken = $token->access_token;
 
         // Step 1: Buka database Accurate
         $openDbResponse = Http::withToken($accessToken)->get('https://account.accurate.id/api/open-db.do', [
@@ -159,6 +171,11 @@ class AccurateController extends Controller
         $sessionId = $openDbResponse['session'];
         $host = $openDbResponse['host'];
 
+        // Ambil nomor halaman dari query parameter
+        $page = $request->query('page', 1); // default ke 1
+        $keyword = $request->input('keyword', 1); // Ambil data pencarian
+        $pageSize = 10;
+
         // Step 2: Ambil daftar item
         $itemListResponse = Http::withHeaders([
             'Authorization' => 'Bearer ' . $accessToken,
@@ -166,9 +183,11 @@ class AccurateController extends Controller
         ])->get($host . '/accurate/api/item/list.do', [
             'fields' => 'id,name,no',
             'filter.itemType' => 'INVENTORY',
-            'sp.page' => 1,
-            'sp.pageSize' => 10,
+            'sp.page' => $page,
+            'sp.pageSize' => $pageSize,
             'sp.sort' => 'name|asc',
+            'filter.keywords.op' => 'CONTAIN',
+            'filter.keywords.val' => $keyword,
         ]);
 
         if (!$itemListResponse->ok()) {
@@ -176,6 +195,9 @@ class AccurateController extends Controller
         }
 
         $itemsRaw = $itemListResponse['d'] ?? [];
+        $pagination = $itemListResponse['sp'] ?? [];
+        $totalPages = $pagination['pageCount'] ?? 1;
+
         $detailedItems = [];
 
         // Step 3: Ambil detail tiap item
@@ -190,7 +212,6 @@ class AccurateController extends Controller
             if ($detailResponse->ok() && isset($detailResponse['d'])) {
                 $detailedItems[] = $detailResponse['d'];
             } else {
-                // Jika gagal ambil detail, tetap simpan ID, name dan no saja
                 $detailedItems[] = [
                     'id' => $item['id'],
                     'name' => $item['name'] ?? '-',
@@ -209,29 +230,22 @@ class AccurateController extends Controller
             }
         }
 
-
         $produkList = collect($detailedItems)->map(function ($item) {
             $hargaSatuan = [];
 
-            // Unit pertama (unitPrice)
             $unit1Name = $item['unit1Name'] ?? 'PCS';
             $hargaSatuan[$unit1Name] = $item['unitPrice'] ?? 0;
 
-            // Unit 2 sampai 5
             for ($i = 2; $i <= 5; $i++) {
                 $unitName = $item["unit{$i}Name"] ?? "UNIT{$i}";
                 $unitPrice = $item["unit{$i}Price"] ?? 0;
-
-                // Hanya tambahkan jika tidak null
                 if ($unitPrice !== null) {
                     $hargaSatuan[$unitName] = $unitPrice;
                 }
             }
 
-            // Pastikan "Semua Cabang" tanpa kurung
-            // Pastikan "Semua Cabang" tanpa kurung siku
             $itemBranchName = $item['itemBranchName'] ?? '[Semua Cabang]';
-            $itemBranchName = str_replace(['[', ']'], '', $itemBranchName); // Menghapus tanda kurung siku
+            $itemBranchName = str_replace(['[', ']'], '', $itemBranchName);
             $itemCategory = $item['itemCategory']['name'] ?? 'Tidak ada kategori';
 
             return [
@@ -243,9 +257,17 @@ class AccurateController extends Controller
             ];
         });
 
-
-        return view('accurate.getItem', ['items' => $produkList]);
+        return view('accurate.getItem', [
+            'items' => $produkList,
+            'currentPage' => $page,
+            'totalPages' => $totalPages,
+            'dbId' => $request->dbId,
+        ]);
     }
+
+
+
+
 
 
     public function printPDF(Request $request)
@@ -266,12 +288,19 @@ class AccurateController extends Controller
 
         return $pdf->stream('produk-terpilih.pdf');
     }
+
+
+
     public function analisaHargaTerakhir(Request $request)
     {
-        $accessToken = Session::get('access_token');
-        if (!$accessToken) {
+        $token = Auth::user()->accurateToken;
+        if (!$token || !$token->access_token) {
             return redirect('/accurate/login')->with('error', 'Access token tidak ditemukan.');
         }
+
+        $accessToken = $token->access_token;
+        $currentPage = $request->input('page', 1); // Ambil halaman saat ini
+        $keyword = $request->input('keyword', 1); // Ambil halaman saat ini
 
         // 1. Buka database Accurate
         $openDb = Http::withToken($accessToken)->get('https://account.accurate.id/api/open-db.do', [
@@ -285,24 +314,28 @@ class AccurateController extends Controller
         $sessionId = $openDb['session'];
         $host = $openDb['host'];
 
-        // 2. Ambil semua produk
+        // 2. Ambil produk dari halaman tertentu
         $itemList = Http::withHeaders([
             'Authorization' => 'Bearer ' . $accessToken,
             'X-Session-ID' => $sessionId,
         ])->get($host . '/accurate/api/item/list.do', [
             'fields' => 'id,name,no',
             'filter.itemType' => 'INVENTORY',
-            'sp.pageSize' => 50,
-            'sp.page' => 1,
+            'sp.pageSize' => 10,
+            'sp.page' => $currentPage,
+            'filter.keywords.op' => 'CONTAIN',
+            'filter.keywords.val' => $keyword,
             'sp.sort' => 'name|asc'
         ]);
 
         $itemsRaw = $itemList['d'] ?? [];
+        $pagination = $itemList['sp'] ?? [];
+        $totalPages = $pagination['pageCount'] ?? 1;
+
 
         $hasil = [];
 
         foreach ($itemsRaw as $item) {
-            // 3. Ambil harga beli & jual terakhir produk ini
             $detail = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $accessToken,
                 'X-Session-ID' => $sessionId,
@@ -316,14 +349,25 @@ class AccurateController extends Controller
 
             $d = $detail['d'];
 
-            // 4. Ambil semua unit (sampai 5)
             $units = [];
             for ($i = 1; $i <= 5; $i++) {
                 $unitName = $d["unit{$i}Name"] ?? null;
                 if ($unitName) {
+                    $hargaBeli = $i === 1
+                        ? ($d["vendorPrice"] ?? 0)
+                        : (($d["vendorPrice"] ?? 0) * ($d["ratio{$i}"] ?? 1));
+
+                    $hargaJual = $i === 1
+                        ? ($d["unitPrice"] ?? 0)
+                        : ($d["unit{$i}Price"] ?? 0);
+
+                    $ratio = $i === 1
+                        ? ''
+                        : ($d["ratio{$i}"] ?? 0);
+
                     $units[$unitName] = [
-                        'harga_beli_terakhir' => $d["lastBuyPrice"][$i - 1] ?? 0,
-                        'harga_jual_terakhir' => $d["lastSellPrice"][$i - 1] ?? 0,
+                        'harga_beli_terakhir' => number_format($hargaBeli, 0, ',', '.') . '/ ' . $ratio . $d["unit1Name"],
+                        'harga_jual_terakhir' => number_format($hargaJual, 0, ',', '.') . '/ ' . $d["unit{$i}Name"],
                     ];
                 }
             }
@@ -335,7 +379,15 @@ class AccurateController extends Controller
             ];
         }
 
-        return view('accurate.analisaHargaTerakhir', compact('hasil'));
+
+
+
+        return view('accurate.analisaHargaTerakhir', [
+            'hasil' => $hasil,
+            'dbId' => $request->dbId,
+            'currentPage' => $currentPage,
+            'totalPages' => $totalPages,
+        ]);
     }
 
 

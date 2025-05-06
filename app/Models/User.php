@@ -47,4 +47,9 @@ class User extends Authenticatable
     {
         return $this->hasOne(AccurateCredential::class);
     }
+
+    public function accurateToken()
+    {
+        return $this->hasOne(AccurateToken::class);
+    }
 }

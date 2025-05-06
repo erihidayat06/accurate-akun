@@ -36,11 +36,11 @@
                         </div>
                     </div>
 
-                    <div class="mb-3">
+                    {{-- <div class="mb-3">
                         <label for="redirect_uri" class="form-label">Redirect URI</label>
                         <input type="url" class="form-control" id="redirect_uri" name="redirect_uri"
                             value="{{ $credential->redirect_uri ?? '' }}" required>
-                    </div>
+                    </div> --}}
 
                     <button type="submit" class="btn btn-primary w-100 mb-3">Simpan</button>
                 </form>

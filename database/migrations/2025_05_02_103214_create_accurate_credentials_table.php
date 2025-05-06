@@ -16,7 +16,6 @@ return new class extends Migration
             $table->unsignedBigInteger('user_id'); // Foreign key ke tabel users
             $table->string('client_id');
             $table->string('client_secret');
-            $table->string('redirect_uri');
             $table->timestamps();
 
             // Relasi ke tabel users
