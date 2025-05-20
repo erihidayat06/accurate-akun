@@ -147,29 +147,36 @@
                                                                 value="{{ $produk['no'] }}" hidden>
 
                                                             @for ($i = 1; $i <= 5; $i++)
-                                                                <div class="input-group mt-3">
-                                                                    <span class="input-group-text">Rp</span>
-                                                                    <input type="text"
-                                                                        name="{{ $i == 1 ? 'unitPrice' : 'unit' . $i . 'Price' }}"
-                                                                        class="form-control"
-                                                                        value="{{ $produk['hj_baru' . $i] ?? null }}"
-                                                                        aria-label="Harga Jual Baru">
+                                                                @if (isset($produk['hj_baru' . $i]))
+                                                                    <label class="mt-3"
+                                                                        for="item{{ $produk['no'] }}"><small>Def. Hrg. Jual
+                                                                            Satuan #{{ $i }} </small></label>
+                                                                    <div class="input-group">
+                                                                        <span class="input-group-text">Rp</span>
+                                                                        <input type="text"
+                                                                            name="{{ $i == 1 ? 'unitPrice' : 'unit' . $i . 'Price' }}"
+                                                                            class="form-control"
+                                                                            value="{{ $produk['hj_baru' . $i] ?? null }}"
+                                                                            aria-label="Harga Jual Baru"
+                                                                            id="item{{ $produk['no'] }}">
 
-                                                                    <span class="input-group-text" style="width: 80px;">
-                                                                        <input type="text"
-                                                                            name="rs[{{ $i }}]"
-                                                                            class="form-control border-0 bg-transparent p-0"
-                                                                            value="{{ $produk['rs' . $i] ?? '-' }}"
-                                                                            readonly>
-                                                                    </span>
-                                                                    <span class="input-group-text" style="width: 80px;">
-                                                                        <input type="text"
-                                                                            name="st[{{ $i }}]"
-                                                                            class="form-control border-0 bg-transparent p-0"
-                                                                            value="{{ $produk['st' . $i] ?? '-' }}"
-                                                                            readonly>
-                                                                    </span>
-                                                                </div>
+                                                                        <span class="input-group-text" style="width: 80px;">
+                                                                            <input type="text"
+                                                                                name="rs[{{ $i }}]"
+                                                                                class="form-control border-0 bg-transparent p-0"
+                                                                                value="{{ $produk['rs' . $i] ?? '-' }}"
+                                                                                readonly>
+                                                                        </span>
+                                                                        <span class="input-group-text"
+                                                                            style="width: 80px;">
+                                                                            <input type="text"
+                                                                                name="st[{{ $i }}]"
+                                                                                class="form-control border-0 bg-transparent p-0"
+                                                                                value="{{ $produk['st' . $i] ?? '-' }}"
+                                                                                readonly>
+                                                                        </span>
+                                                                    </div>
+                                                                @endif
                                                             @endfor
                                                         @else
                                                             <div class="alert alert-danger">Data produk tidak tersedia.
