@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\AccurateToken;
+use Illuminate\Support\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\AccurateCredential;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Session;
 
 class AccurateController extends Controller
@@ -29,8 +31,8 @@ class AccurateController extends Controller
                 abort(403, 'Accurate credentials not found for this user.');
             }
 
-            $this->clientId = $credential->client_id;
-            $this->clientSecret = $credential->client_secret;
+            $this->clientId = config('services.accurate.client_id');
+            $this->clientSecret = config('services.accurate.client_secret');
             $this->redirectUri = config('services.accurate.redirect');
 
             return $next($request);
@@ -41,11 +43,12 @@ class AccurateController extends Controller
 
     public function redirectToAccurate()
     {
+
         $url = "https://account.accurate.id/oauth/authorize?" . http_build_query([
             'client_id'     => $this->clientId,
             'response_type' => 'code',
             'redirect_uri'  => $this->redirectUri,
-            'scope'         => 'item_view item_save sales_invoice_view',
+            'scope'         => 'item_view item_save purchase_invoice_view purchase_order_view purchase_payment_view customer_view',
         ]);
 
         Log::info('Redirecting to Accurate login', ['url' => $url]);
@@ -230,6 +233,8 @@ class AccurateController extends Controller
             }
         }
 
+
+
         $produkList = collect($detailedItems)->map(function ($item) {
             $hargaSatuan = [];
 
@@ -250,12 +255,15 @@ class AccurateController extends Controller
 
             return [
                 'nama' => $item['name'] ?? '-',
+                'upcNo' => $item['upcNo'] ?? '-',
                 'kode' => $item['no'] ?? '-',
                 'harga_satuan' => $hargaSatuan,
                 'cabang' => $itemBranchName,
                 'kategori' => $itemCategory,
             ];
         });
+
+
 
         return view('accurate.getItem', [
             'items' => $produkList,
@@ -293,100 +301,135 @@ class AccurateController extends Controller
 
     public function analisaHargaTerakhir(Request $request)
     {
+
         $token = Auth::user()->accurateToken;
         if (!$token || !$token->access_token) {
             return redirect('/accurate/login')->with('error', 'Access token tidak ditemukan.');
         }
 
         $accessToken = $token->access_token;
-        $currentPage = $request->input('page', 1); // Ambil halaman saat ini
-        $keyword = $request->input('keyword', 1); // Ambil halaman saat ini
+        $currentPage = $request->input('page', 1);
+        $keyword = $request->input('keyword', '');
+        $startDate = Carbon::parse($request->start_date ?? Carbon::now()->startOfMonth())->format('d/m/Y');
+        $endDate = Carbon::parse($request->end_date ?? Carbon::now())->format('d/m/Y');
 
-        // 1. Buka database Accurate
-        $openDb = Http::withToken($accessToken)->get('https://account.accurate.id/api/open-db.do', [
-            'id' => $request->dbId,
-        ]);
+        // 🔒 Buat cache key unik berdasarkan dbId + tanggal + halaman
+        $cacheKey = "analisaHargaTerakhir_{$request->dbId}_{$startDate}_{$endDate}_page{$currentPage}";
 
-        if (!$openDb->ok() || !isset($openDb['session'], $openDb['host'])) {
-            return response()->json(['error' => 'Gagal membuka database Accurate']);
-        }
-
-        $sessionId = $openDb['session'];
-        $host = $openDb['host'];
-
-        // 2. Ambil produk dari halaman tertentu
-        $itemList = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $accessToken,
-            'X-Session-ID' => $sessionId,
-        ])->get($host . '/accurate/api/item/list.do', [
-            'fields' => 'id,name,no',
-            'filter.itemType' => 'INVENTORY',
-            'sp.pageSize' => 10,
-            'sp.page' => $currentPage,
-            'filter.keywords.op' => 'CONTAIN',
-            'filter.keywords.val' => $keyword,
-            'sp.sort' => 'name|asc'
-        ]);
-
-        $itemsRaw = $itemList['d'] ?? [];
-        $pagination = $itemList['sp'] ?? [];
-        $totalPages = $pagination['pageCount'] ?? 1;
-
-
-        $hasil = [];
-
-        foreach ($itemsRaw as $item) {
-            $detail = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $accessToken,
-                'X-Session-ID' => $sessionId,
-            ])->get($host . '/accurate/api/item/detail.do', [
-                'id' => $item['id'],
+        // ✅ Ambil dari cache jika ada, atau simpan jika tidak
+        $cachedData = Cache::remember($cacheKey, now()->addMinutes(30), function () use (
+            $accessToken,
+            $startDate,
+            $endDate,
+            $currentPage,
+            $request
+        ) {
+            $openDb = Http::withToken($accessToken)->get('https://account.accurate.id/api/open-db.do', [
+                'id' => $request->dbId,
             ]);
 
-            if (!$detail->ok() || !isset($detail['d'])) {
-                continue;
+            if (!$openDb->ok() || !isset($openDb['session'], $openDb['host'])) {
+                return ['error' => 'Gagal membuka database Accurate'];
             }
 
-            $d = $detail['d'];
+            $sessionId = $openDb['session'];
+            $host = $openDb['host'];
 
-            $units = [];
-            for ($i = 1; $i <= 5; $i++) {
-                $unitName = $d["unit{$i}Name"] ?? null;
-                if ($unitName) {
-                    $hargaBeli = $i === 1
-                        ? ($d["vendorPrice"] ?? 0)
-                        : (($d["vendorPrice"] ?? 0) * ($d["ratio{$i}"] ?? 1));
+            $itemList = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $accessToken,
+                'X-Session-ID' => $sessionId,
+            ])->get($host . '/accurate/api/purchase-order/list.do', [
+                'sp.pageSize' => 9999,
+                'sp.page' => $currentPage,
+                'filter.transDate.op' => 'BETWEEN',
+                'filter.transDate.val[0]' => $startDate,
+                'filter.transDate.val[1]' => $endDate,
+            ]);
 
-                    $hargaJual = $i === 1
-                        ? ($d["unitPrice"] ?? 0)
-                        : ($d["unit{$i}Price"] ?? 0);
+            $itemsRaw = $itemList['d'] ?? [];
+            $pagination = $itemList['sp'] ?? [];
+            $totalPages = $pagination['pageCount'] ?? 1;
 
-                    $ratio = $i === 1
-                        ? ''
-                        : ($d["ratio{$i}"] ?? 0);
+            $hasil = [];
 
-                    $units[$unitName] = [
-                        'harga_beli_terakhir' => number_format($hargaBeli, 0, ',', '.') . '/ ' . $ratio . $d["unit1Name"],
-                        'harga_jual_terakhir' => number_format($hargaJual, 0, ',', '.') . '/ ' . $d["unit{$i}Name"],
+            foreach ($itemsRaw as $item) {
+                $detail = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . $accessToken,
+                    'X-Session-ID' => $sessionId,
+                ])->get($host . '/accurate/api/purchase-order/detail.do', [
+                    'id' => $item['id'],
+                    'sp.sort' => 'asc',
+                ]);
+
+                if (!$detail->ok() || !isset($detail['d']['detailItem'])) {
+                    continue;
+                }
+
+                $transDate = $detail['d']['transDateView'] ?? '-';
+
+
+
+                foreach ($detail['d']['detailItem'] as $detailItem) {
+                    $d = $detailItem['item'] ?? null;
+
+                    if (!$d) continue;
+
+                    $row = [
+                        'no' => $d['no'] ?? '-',
+                        'id' => $d['id'] ?? '-',
+                        'nama_barang' => $d['name'] ?? '-',
+                        'qty' => $detailItem['quantity'] ?? 0,
+                        'st' => $detailItem['availableItemUnitName'] ?? '-',
+                        'hb_baru' => $detailItem['unitPrice'] ?? 0,
+                        'disc_fp_baru' => $detailItem['discount'] ?? 0,
+                        'hb_lama' => $d['unit1VendorPrice'] ?? 0,
+                        'itemType' => $d['itemType'] ?? 0,
+                        'tgl_transaksi' => $transDate,
                     ];
+
+
+                    for ($i = 1; $i <= 5; $i++) {
+                        $unit = $d["unit{$i}"] ?? null;
+                        $unitName = $unit['name'] ?? null;
+                        $hj_lama = $d["unitPrice"] ?? 0;
+                        $hj_baru = $i === 1 ? ($d["unitPrice"] ?? 0) : ($d["unit{$i}Price"] ?? 0);
+                        $ratio = $d["ratio{$i}"] ?? null;
+
+                        if ($unitName) {
+                            $row["unit{$i}Name"] = "unit{$i}Name";
+                            $row["hj_lama{$i}"] = $hj_lama;
+                            $row["hj_baru{$i}"] = $hj_baru;
+                            $row["st{$i}"] = $unitName;
+                            $row["rs{$i}"] = $ratio;
+                        }
+                    }
+
+                    $hasil[] = $row;
                 }
             }
 
-            $hasil[] = [
-                'nama' => $d['name'] ?? '-',
-                'kode' => $d['no'] ?? '-',
-                'units' => $units,
+            usort($hasil, function ($a, $b) {
+                return strtotime($a['tgl_transaksi']) <=> strtotime($b['tgl_transaksi']);
+            });
+
+
+
+            return [
+                'hasil' => $hasil,
+                'totalPages' => $totalPages,
             ];
+        });
+
+        // Jika terjadi error saat fetch
+        if (isset($cachedData['error'])) {
+            return response()->json(['error' => $cachedData['error']]);
         }
 
-
-
-
         return view('accurate.analisaHargaTerakhir', [
-            'hasil' => $hasil,
+            'hasil' => $cachedData['hasil'],
             'dbId' => $request->dbId,
             'currentPage' => $currentPage,
-            'totalPages' => $totalPages,
+            'totalPages' => $cachedData['totalPages'],
         ]);
     }
 

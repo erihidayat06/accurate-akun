@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AccurateController;
 use App\Http\Controllers\CredentialController;
+use App\Http\Controllers\HargaController;
 use App\Services\AccurateService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -44,6 +45,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/accurate/items', [AccurateController::class, 'getItems'])->name('get.item');
     Route::get('/accurate/analisa-harga-terakhir', [AccurateController::class, 'analisaHargaTerakhir'])->name('accurate.analisaHarga');
     Route::post('/produk/print-pdf', [AccurateController::class, 'printPDF'])->name('produk.print-pdf');
+
+
+    Route::post('/update/harga', [HargaController::class, 'store'])->name('update.harga');
 });
 
 

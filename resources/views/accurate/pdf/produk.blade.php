@@ -133,11 +133,11 @@
                     <hr>
                     <table style="width: 100%">
                         <tr>
-                            <td>
-                                Berlaku di cabang
+                            <td style="width: 100%">
+
                             </td>
                             <td style="text-align: right">
-                                {{ ucfirst($item['cabang']) }}
+                                {!! DNS1D::getBarcodeHTML($item['upcNo'], 'C128', 1.5, 30) !!}
                             </td>
                         </tr>
                     </table>

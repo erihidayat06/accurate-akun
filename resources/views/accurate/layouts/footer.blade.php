@@ -1,7 +1,7 @@
   <!-- ======= Footer ======= -->
   <footer id="footer" class="footer">
       <div class="copyright">
-          &copy; Copyright <strong><span>Accurate aplikasi</span></strong>. All Rights Reserved
+          &copy; Copyright <strong><span>PT REKATAMA KREASI CIPTA</span></strong>. All Rights Reserved
       </div>
 
   </footer><!-- End Footer -->

@@ -30,6 +30,7 @@
                         <thead>
                             <tr>
                                 <th><input type="checkbox" id="select-all"></th>
+                                <th>upcNo</th>
                                 <th>Kode Produk</th>
                                 <th>Nama Produk</th>
                                 <th>Kategori</th>
@@ -44,6 +45,8 @@
                                         <input type="checkbox" name="selected_products[]"
                                             value="{{ base64_encode(json_encode($item)) }}">
                                     </td>
+                                    <td>{!! DNS1D::getBarcodeHTML($item['upcNo'], 'C128', 1, 30) !!}</td>
+
                                     <td>{{ $item['kode'] }}</td>
                                     <td>{{ $item['nama'] }}</td>
                                     <td>{{ $item['kategori'] }}</td>

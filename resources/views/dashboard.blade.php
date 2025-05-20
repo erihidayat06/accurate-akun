@@ -2,8 +2,7 @@
     <div class="d-flex justify-content-center align-items-center vh-100">
         <div class="card shadow" style="width: 30rem;">
             <div class="card-body">
-                <h3 class="text-center mb-4">Akun accurate</h3>
-
+                {{--
                 @if (session('success'))
                     <div class="alert alert-success">
                         {{ session('success') }}
@@ -34,19 +33,19 @@
                                 <i class="bi bi-eye"></i>
                             </button>
                         </div>
-                    </div>
+                    </div> --}}
 
-                    {{-- <div class="mb-3">
+                {{-- <div class="mb-3">
                         <label for="redirect_uri" class="form-label">Redirect URI</label>
                         <input type="url" class="form-control" id="redirect_uri" name="redirect_uri"
                             value="{{ $credential->redirect_uri ?? '' }}" required>
                     </div> --}}
 
-                    <button type="submit" class="btn btn-primary w-100 mb-3">Simpan</button>
-                </form>
+                {{-- <button type="submit" class="btn btn-primary w-100 mb-3">Simpan</button>
+                </form> --}}
 
                 <!-- Tombol untuk masuk ke Accurate login -->
-                <a href="{{ route('accurate.login') }}" class="btn btn-secondary w-100">Masuk ke Accurate Login</a>
+                <a href="{{ route('accurate.login') }}" class="btn btn-danger w-100 p-3 fs-5">Masuk ke Accurate Login</a>
             </div>
         </div>
     </div>

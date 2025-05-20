@@ -52,11 +52,36 @@
 
 
         <section class="section dashboard">
+            <!-- Spinner Overlay -->
+            <div id="spinner-overlay"
+                style="display: none; position: fixed; z-index: 9999; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(255, 255, 255, 0.8);">
+                <div class="d-flex justify-content-center align-items-center h-100">
+                    <div class="spinner-border text-primary" role="status" style="width: 4rem; height: 4rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+
             @yield('content')
         </section>
     </main>
 
     @include('accurate.layouts.footer')
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const forms = document.querySelectorAll('form');
+
+            forms.forEach(form => {
+                form.addEventListener('submit', function() {
+                    // Tampilkan overlay spinner saat submit
+                    document.getElementById('spinner-overlay').style.display = 'block';
+                });
+            });
+        });
+    </script>
+
+
 </body>
 
 </html>
