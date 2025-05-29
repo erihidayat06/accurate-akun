@@ -35,6 +35,7 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
+
     <!-- =======================================================
   * Template Name: NiceAdmin
   * Template URL: https://bootstrapmade.com/nice-admin-bootstrap-admin-html-template/
@@ -67,10 +68,12 @@
     </main>
 
     @include('accurate.layouts.footer')
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const forms = document.querySelectorAll('form');
+            const forms = document.getElementById('simpan');
 
             forms.forEach(form => {
                 form.addEventListener('submit', function() {

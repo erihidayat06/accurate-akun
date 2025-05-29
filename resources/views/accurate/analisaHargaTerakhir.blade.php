@@ -27,6 +27,7 @@
                     $defaultEnd = Carbon::now()->format('Y-m-d');
                 @endphp
 
+
                 <!-- Form Pencarian -->
                 <div class="mb-3">
                     <input type="text" id="search-input" class="form-control" placeholder="Cari di tabel...">
@@ -53,13 +54,169 @@
                 </form>
 
 
+                <button class="btn btn-success" id="exportExcel">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export
+                </button>
+
+                <!-- Tombol trigger modal -->
+                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#importExcelModal">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Import
+                </button>
+
+                <!-- Modal -->
+                <div class="modal fade" id="importExcelModal" tabindex="-1" aria-labelledby="importExcelLabel"
+                    aria-hidden="true">
+                    <div class="modal-dialog">
+                        <form id="formImportExcel" enctype="multipart/form-data">
+                            @csrf
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="importExcelLabel">Penyesuaian Harga</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                        aria-label="Tutup"></button>
+                                </div>
+                                <div id="formAlertContainer"></div>
+
+                                <div class="modal-body">
+                                    <div class="mb-3">
+                                        <label for="transDate">Tanggal Transaksi</label>
+                                        <input type="date" name="transDate" class="form-control" required>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="description">Deskripsi</label>
+                                        <input type="text" name="description" class="form-control">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label>Kategori Penjualan</label><br>
+                                        @foreach ($kategori_penjualan as $kategori)
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox"
+                                                    name="salesAdjustmentCategoryList[]" value="{{ $kategori['id'] }}"
+                                                    id="kategori-{{ $kategori['id'] }}">
+                                                <label class="form-check-label" for="kategori-{{ $kategori['id'] }}">
+                                                    {{ $kategori['name'] }}
+                                                </label>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="file">Pilih File Excel</label>
+                                        <input type="file" name="file" class="form-control" accept=".xlsx, .xls "
+                                            required>
+                                    </div>
+
+                                    <input type="hidden" name="dbId" value="{{ request('dbId') }}">
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-primary" id="submitBtn">
+                                        Upload & Kirim
+                                    </button>
+                                </div>
+
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- AJAX Script -->
+                <script>
+                    document.getElementById('formImportExcel').addEventListener('submit', async function(e) {
+                        e.preventDefault();
+
+                        const form = e.target;
+                        const formData = new FormData(form);
+                        const submitBtn = document.getElementById('submitBtn');
+                        const alertContainer = document.getElementById('formAlertContainer');
+
+                        // Ubah tombol jadi spinner
+                        submitBtn.disabled = true;
+                        const originalBtnHtml = submitBtn.innerHTML;
+                        submitBtn.innerHTML =
+                            `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Mengirim...`;
+
+                        // Clear alert sebelumnya
+                        alertContainer.innerHTML = '';
+
+                        try {
+                            const res = await fetch("{{ route('penyesuaian.import') }}", {
+                                method: "POST",
+                                headers: {
+                                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                },
+                                body: formData
+                            });
+
+                            const text = await res.text();
+                            try {
+                                const data = JSON.parse(text);
+
+                                if (data.success) {
+                                    // Alert sukses
+                                    alertContainer.innerHTML = `
+                                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                            ${data.message}
+                                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                        </div>`;
+
+                                    // Reset form
+                                    form.reset();
+
+                                    // Tutup modal setelah delay sebentar
+                                    const modalEl = document.getElementById('importExcelModal');
+                                    const modal = bootstrap.Modal.getInstance(modalEl);
+                                    setTimeout(() => {
+                                        modal.hide();
+                                    }, 1000);
+                                } else {
+                                    // Alert gagal
+                                    alertContainer.innerHTML = `
+                                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                            Gagal: ${data.message}
+                                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                        </div>`;
+                                    if (data.debug) console.log("Detail error:", data.debug);
+                                }
+                            } catch (err) {
+                                console.error("Response bukan JSON valid:", text);
+                                alertContainer.innerHTML = `
+                                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                        Response bukan JSON valid, lihat console.
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>`;
+                            }
+                        } catch (err) {
+                            console.error("Error:", err);
+                            alertContainer.innerHTML = `
+                                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                    Terjadi kesalahan saat mengunggah. Coba lagi nanti.
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>`;
+                        } finally {
+                            // Kembalikan tombol ke semula
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = originalBtnHtml;
+                        }
+                    });
+                </script>
+
+
+
+
+
+
+
 
                 <div class="table-responsive mt-3"
                     style="max-height: calc(100vh - 200px); overflow-y: auto; overflow-x: auto;">
+                    <div id="barang-check"></div>
                     <table class="table table-bordered table-striped" id="data-table">
                         <thead class="table-light">
                             <tr>
                                 {{-- Sticky header atas --}}
+                                <th style="position: sticky; top: 0; background: #f8f9fa; z-index: 10;">#</th>
+                                {{-- Checkbox untuk centang semua --}}
                                 <th style="position: sticky; top: 0; background: #f8f9fa; z-index: 10;">Aksi</th>
                                 <th style="position: sticky; top: 0; background: #f8f9fa; z-index: 10;">Tanggal</th>
 
@@ -87,9 +244,39 @@
                             </tr>
                         </thead>
                         <tbody>
+
                             @forelse ($hasil as $produk)
                                 @if ($produk['hb_baru'] > 0)
+                                    @php
+                                        $satuan = [];
+                                        for ($i = 1; $i <= 5; $i++) {
+                                            $hjKey = 'hj_baru' . $i;
+                                            $stKey = 'st' . $i;
+                                            $rsKey = 'rs' . $i;
+
+                                            if (!empty($produk[$hjKey]) && $produk[$hjKey] > 0) {
+                                                $satuan[] = [
+                                                    'harga' => $produk[$hjKey],
+                                                    'satuan' => $produk[$stKey] ?? '-',
+                                                    'reseller' => $produk[$rsKey] ?? '-',
+                                                ];
+                                            }
+                                        }
+
+                                        $item = [
+                                            'no' => $produk['no'],
+                                            'nama_barang' => $produk['nama_barang'],
+                                            'satuan' => $satuan,
+                                        ];
+                                    @endphp
+
                                     <tr>
+                                        <td>
+                                            <input type="checkbox" class="checkItem"
+                                                value='@json($item)'>
+                                        </td>
+
+
                                         <td style="white-space: nowrap;">
                                             <!-- Button trigger modal -->
                                             <button type="button" class="btn btn-success" data-bs-toggle="modal"
@@ -124,72 +311,111 @@
                                         aria-labelledby="produkLabel{{ $produk['no'] }}" aria-hidden="true">
                                         <div class="modal-dialog">
                                             <div class="modal-content">
-                                                <div class="modal-header">
-                                                    <p class="modal-title " id="produkLabel{{ $produk['no'] }}">
-                                                        {{ $produk['no'] }}&nbsp;{{ $produk['nama_barang'] }}
-                                                    </p>
-                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                        aria-label="Close"></button>
-                                                </div>
-                                                <div class="modal-body">
-                                                    <form action="{{ route('update.harga') }}" method="POST">
-                                                        @csrf
-                                                        @if (isset($produk))
-                                                            <input type="text" name="dbId"
-                                                                value="{{ request('dbId') }}" hidden>
-                                                            <input type="text" name="nama_produk"
-                                                                value="{{ $produk['nama_barang'] }}" hidden>
-                                                            <input type="text" name="itemType"
-                                                                value="{{ $produk['itemType'] }}" hidden>
-                                                            <input type="text" name="id"
-                                                                value="{{ $produk['id'] }}" hidden>
-                                                            <input type="text" name="no"
-                                                                value="{{ $produk['no'] }}" hidden>
-
-                                                            @for ($i = 1; $i <= 5; $i++)
-                                                                @if (isset($produk['hj_baru' . $i]))
-                                                                    <label class="mt-3"
-                                                                        for="item{{ $produk['no'] }}"><small>Def. Hrg. Jual
-                                                                            Satuan #{{ $i }} </small></label>
-                                                                    <div class="input-group">
-                                                                        <span class="input-group-text">Rp</span>
-                                                                        <input type="text"
-                                                                            name="{{ $i == 1 ? 'unitPrice' : 'unit' . $i . 'Price' }}"
-                                                                            class="form-control"
-                                                                            value="{{ $produk['hj_baru' . $i] ?? null }}"
-                                                                            aria-label="Harga Jual Baru"
-                                                                            id="item{{ $produk['no'] }}">
-
-                                                                        <span class="input-group-text" style="width: 80px;">
-                                                                            <input type="text"
-                                                                                name="rs[{{ $i }}]"
-                                                                                class="form-control border-0 bg-transparent p-0"
-                                                                                value="{{ $produk['rs' . $i] ?? '-' }}"
-                                                                                readonly>
-                                                                        </span>
-                                                                        <span class="input-group-text"
-                                                                            style="width: 80px;">
-                                                                            <input type="text"
-                                                                                name="st[{{ $i }}]"
-                                                                                class="form-control border-0 bg-transparent p-0"
-                                                                                value="{{ $produk['st' . $i] ?? '-' }}"
-                                                                                readonly>
-                                                                        </span>
-                                                                    </div>
-                                                                @endif
-                                                            @endfor
-                                                        @else
-                                                            <div class="alert alert-danger">Data produk tidak tersedia.
+                                                <form id="form-penyesuaian-{{ $produk['no'] }}"
+                                                    action="{{ route('sales.adjustment') }}" method="POST">
+                                                    @csrf
+                                                    <div class="modal-header">
+                                                        <p class="modal-title" id="produkLabel{{ $produk['no'] }}">
+                                                            {{ $produk['no'] }} - {{ $produk['nama_barang'] }}
+                                                        </p>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                            aria-label="Close"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        @if (session('success'))
+                                                            <div class="alert alert-success">{{ session('success') }}
                                                             </div>
                                                         @endif
+                                                        @if (session('error'))
+                                                            <div class="alert alert-danger">{{ session('error') }}</div>
+                                                        @endif
+                                                        <div id="response-message" class="mt-2"></div>
 
-                                                </div>
-                                                <div class="modal-footer">
-                                                    <button type="button" class="btn btn-secondary"
-                                                        data-bs-dismiss="modal">Close</button>
-                                                    <button type="submit" class="btn btn-primary">Update</button>
-                                                </div>
+                                                        <input type="hidden" name="dbId"
+                                                            value="{{ request('dbId') }}">
+                                                        <input type="hidden" name="itemNo"
+                                                            value="{{ $produk['no'] }}">
+                                                        <input type="hidden" name="itemName"
+                                                            value="{{ $produk['nama_barang'] }}">
+
+                                                        <div class="mb-3">
+                                                            <label for="hj_selector_{{ $produk['no'] }}">Pilih Kategori
+                                                                Harga</label>
+                                                            <select class="form-select mb-2"
+                                                                id="hj_selector_{{ $produk['no'] }}">
+                                                                @for ($i = 1; $i <= 5; $i++)
+                                                                    @php
+                                                                        $hj = $produk['hj_baru' . $i] ?? 0;
+                                                                        $rs = $produk['rs' . $i] ?? '-';
+                                                                        $st = $produk['st' . $i] ?? '-';
+                                                                    @endphp
+                                                                    @if ($hj > 0)
+                                                                        <option
+                                                                            value="{{ (int) $hj }}|{{ $st }}">
+                                                                            [{{ $rs }} - {{ $st }}] Rp
+                                                                            {{ number_format($hj, 0, ',', '.') }}
+                                                                        </option>
+                                                                    @endif
+                                                                @endfor
+                                                            </select>
+
+
+                                                            <input type="hidden" name="st"
+                                                                id="st-{{ $produk['no'] }}">
+
+                                                            <label for="price-{{ $produk['no'] }}">Harga
+                                                                Penyesuaian</label>
+                                                            <div class="input-group">
+                                                                <span class="input-group-text">Rp</span>
+                                                                <input type="number" class="form-control" name="price"
+                                                                    id="price-{{ $produk['no'] }}"
+                                                                    value="{{ $produk['hj_baru1'] ?? 0 }}" required>
+                                                            </div>
+
+                                                        </div>
+
+                                                        <div class="mb-3">
+                                                            <label for="transDate">Tanggal Berlaku</label>
+                                                            <input type="date" class="form-control" name="transDate"
+                                                                value="{{ date('Y-m-d') }}" required>
+                                                        </div>
+
+                                                        <div class="mb-3">
+                                                            <label for="description">Catatan Penyesuaian</label>
+                                                            <input type="text" class="form-control" name="description"
+                                                                value="Penyesuaian untuk {{ $produk['nama_barang'] }}">
+                                                        </div>
+
+                                                        <div class="mb-3">
+                                                            <label>Kategori Penjualan</label><br>
+                                                            @foreach ($kategori_penjualan as $kategori)
+                                                                <div class="form-check form-check-inline">
+                                                                    <input class="form-check-input" type="checkbox"
+                                                                        name="salesAdjustmentCategoryList[]"
+                                                                        value="{{ $kategori['id'] }}"
+                                                                        id="kategori-{{ $kategori['id'] }}">
+                                                                    <label class="form-check-label"
+                                                                        for="kategori-{{ $kategori['id'] }}">
+                                                                        {{ $kategori['name'] }}
+                                                                    </label>
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary"
+                                                            data-bs-dismiss="modal">Tutup</button>
+                                                        <button type="submit" class="btn btn-primary"
+                                                            id="submit-btn-{{ $produk['no'] }}">
+                                                            <span class="spinner-border spinner-border-sm d-none"
+                                                                role="status" aria-hidden="true"
+                                                                id="spinner-{{ $produk['no'] }}"></span>
+                                                            <span class="btn-text">Kirim Penyesuaian</span>
+                                                        </button>
+
+                                                    </div>
                                                 </form>
+
 
                                             </div>
                                         </div>
@@ -242,6 +468,76 @@
             </div>
         </div>
     </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+    <script>
+        document.getElementById('exportExcel').addEventListener('click', function() {
+            const headers = ['No', 'Nama Barang', 'Harga', 'Satuan'];
+            const rows = [headers];
+
+            document.querySelectorAll('.checkItem:checked').forEach((checkbox) => {
+                try {
+                    const data = JSON.parse(checkbox.value);
+
+                    if (!data.satuan || data.satuan.length === 0) {
+                        rows.push([data.no, data.nama_barang, '', '']);
+                    } else {
+                        data.satuan.forEach((varian, i) => {
+                            rows.push([
+                                data.no ?? '',
+                                data.nama_barang ?? '',
+                                varian.harga ?? '',
+                                varian.satuan ?? ''
+                            ]);
+                        });
+                    }
+                } catch (error) {
+                    console.error('JSON parsing error:', error);
+                }
+            });
+
+            if (rows.length === 1) {
+                alert('Tidak ada data yang dicentang.');
+                return;
+            }
+
+            // Convert array to worksheet
+            const worksheet = XLSX.utils.aoa_to_sheet(rows);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Data Barang");
+
+            // Export file
+            XLSX.writeFile(workbook, "data_produk.xlsx");
+        });
+    </script>
+
+
+
+
+
+
+
+
+
+
+    <script>
+        $(document).ready(function() {
+            @foreach ($hasil as $produk)
+                $(document).on('change', '#hj_selector_{{ $produk['no'] }}', function() {
+                    const value = $(this).val(); // contoh: "15000|PCS"
+                    const [price, satuan] = value.split('|');
+
+                    $('#price-{{ $produk['no'] }}').val(price);
+                    $('#st-{{ $produk['no'] }}').val(satuan);
+                });
+            @endforeach
+        });
+    </script>
+
+
+
+
 
     <script>
         document.getElementById('search-input').addEventListener('input', function() {
@@ -257,6 +553,74 @@
                 } else {
                     row.style.display = 'none';
                 }
+            });
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('form[id^="form-penyesuaian-"]').forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+
+                    const formId = this.id;
+                    const produkNo = formId.replace('form-penyesuaian-', '');
+                    const url = this.action;
+                    const formData = new FormData(this);
+
+                    // Elements spinner dan tombol
+                    const submitBtn = document.getElementById('submit-btn-' + produkNo);
+                    const spinner = document.getElementById('spinner-' + produkNo);
+                    const btnText = submitBtn.querySelector('.btn-text');
+
+                    // Reset message area
+                    const messageDiv = document.getElementById('response-message');
+                    messageDiv.innerHTML = '';
+
+                    // Tampilkan spinner dan disable tombol
+                    spinner.classList.remove('d-none');
+                    btnText.textContent =
+                        'Loading...';
+                    submitBtn.disabled = true;
+
+                    fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRF-TOKEN': formData.get('_token'),
+                                'Accept': 'application/json'
+                            },
+                            body: formData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                messageDiv.innerHTML =
+                                    `<div class="alert alert-success">${data.message}</div>`;
+                                setTimeout(() => {
+                                    const modalEl = document.getElementById(
+                                        'produkModal' + produkNo);
+                                    const modal = bootstrap.Modal.getInstance(
+                                        modalEl);
+                                    modal.hide();
+                                    // Optional: reload page atau update data
+                                }, 1500);
+                            } else {
+                                messageDiv.innerHTML =
+                                    `<div class="alert alert-danger">${data.message}</div>`;
+                            }
+                        })
+                        .catch(err => {
+                            messageDiv.innerHTML =
+                                `<div class="alert alert-danger">Terjadi kesalahan: ${err.message}</div>`;
+                        })
+                        .finally(() => {
+                            // Hide spinner dan enable tombol kembali
+                            spinner.classList.add('d-none');
+                            btnText.textContent = 'Kirim Penyesuaian';
+                            submitBtn.disabled = false;
+                        });
+                });
             });
         });
     </script>

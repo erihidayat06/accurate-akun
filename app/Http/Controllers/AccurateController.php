@@ -48,7 +48,7 @@ class AccurateController extends Controller
             'client_id'     => $this->clientId,
             'response_type' => 'code',
             'redirect_uri'  => $this->redirectUri,
-            'scope'         => 'item_view item_save purchase_invoice_view purchase_order_view purchase_payment_view customer_view',
+            'scope'         => 'item_view item_adjustment_save purchase_invoice_view purchase_order_view purchase_payment_view customer_view price_category_view sellingprice_adjustment_save',
         ]);
 
         Log::info('Redirecting to Accurate login', ['url' => $url]);
@@ -322,11 +322,34 @@ class AccurateController extends Controller
         $sessionId = $openDb['session'];
         $host = $openDb['host'];
 
+        $kategori_penjualan = [];
+        if (!empty($accessToken) && !empty($sessionId)) {
+            $endpoint = $host . '/accurate/api/price-category/list.do';
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $accessToken,
+                'X-Session-ID' => $sessionId,
+            ])->get($endpoint);
+
+            if ($response->successful()) {
+                $list = $response->json('d') ?? [];
+                $kategori_penjualan = collect($list)->map(function ($item) use ($accessToken, $sessionId, $host) {
+                    $detail = Http::withHeaders([
+                        'Authorization' => 'Bearer ' . $accessToken,
+                        'X-Session-ID' => $sessionId,
+                    ])->get($host . '/accurate/api/price-category/detail.do', [
+                        'id' => $item['id'],
+                    ]);
+                    return $detail->successful() ? $detail->json('d') : $item;
+                })->all();
+            }
+        }
+
         $itemList = Http::withHeaders([
             'Authorization' => 'Bearer ' . $accessToken,
             'X-Session-ID' => $sessionId,
         ])->get($host . '/accurate/api/purchase-order/list.do', [
-            'sp.pageSize' => 9999,
+            'sp.pageSize' => 99999,
             'sp.page' => $currentPage,
             'filter.transDate.op' => 'BETWEEN',
             'filter.transDate.val[0]' => $startDate,
@@ -337,63 +360,72 @@ class AccurateController extends Controller
         $pagination = $itemList['sp'] ?? [];
         $totalPages = $pagination['pageCount'] ?? 1;
 
-        $hasil = [];
+        $cacheKey = 'analisaHargaTerakhir_' . md5("{$request->dbId}_{$startDate}_{$endDate}");
 
-        foreach ($itemsRaw as $item) {
-            $detail = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $accessToken,
-                'X-Session-ID' => $sessionId,
-            ])->get($host . '/accurate/api/purchase-order/detail.do', [
-                'id' => $item['id'],
-                'sp.sort' => 'asc',
-            ]);
-
-            if (!$detail->ok() || !isset($detail['d']['detailItem'])) {
-                continue;
-            }
-
-            $transDate = $detail['d']['transDateView'] ?? '-';
-
-            foreach ($detail['d']['detailItem'] as $detailItem) {
-                $d = $detailItem['item'] ?? null;
-
-                if (!$d) continue;
-
-                $row = [
-                    'no' => $d['no'] ?? '-',
-                    'id' => $d['id'] ?? '-',
-                    'nama_barang' => $d['name'] ?? '-',
-                    'qty' => $detailItem['quantity'] ?? 0,
-                    'st' => $detailItem['availableItemUnitName'] ?? '-',
-                    'hb_baru' => $detailItem['unitPrice'] ?? 0,
-                    'disc_fp_baru' => $detailItem['discount'] ?? 0,
-                    'hb_lama' => $d['unit1VendorPrice'] ?? 0,
-                    'itemType' => $d['itemType'] ?? 0,
-                    'tgl_transaksi' => $transDate,
-                ];
-
-                for ($i = 1; $i <= 5; $i++) {
-                    $unit = $d["unit{$i}"] ?? null;
-                    $unitName = $unit['name'] ?? null;
-                    $hj_lama = $d["unitPrice"] ?? 0;
-                    $hj_baru = $i === 1 ? ($d["unitPrice"] ?? 0) : ($d["unit{$i}Price"] ?? 0);
-                    $ratio = $d["ratio{$i}"] ?? null;
-
-                    if ($unitName) {
-                        $row["unit{$i}Name"] = "unit{$i}Name";
-                        $row["hj_lama{$i}"] = $hj_lama;
-                        $row["hj_baru{$i}"] = $hj_baru;
-                        $row["st{$i}"] = $unitName;
-                        $row["rs{$i}"] = $ratio;
-                    }
-                }
-
-                $hasil[] = $row;
-            }
+        if ($request->input('reset')) {
+            Cache::forget($cacheKey);
         }
 
-        usort($hasil, function ($a, $b) {
-            return strtotime($a['tgl_transaksi']) <=> strtotime($b['tgl_transaksi']);
+        $hasil = Cache::remember($cacheKey, now()->addMinutes(60), function () use ($itemsRaw, $accessToken, $sessionId, $host) {
+            $result = [];
+
+            foreach ($itemsRaw as $item) {
+                $detail = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . $accessToken,
+                    'X-Session-ID' => $sessionId,
+                ])->get($host . '/accurate/api/purchase-order/detail.do', [
+                    'id' => $item['id'],
+                    'sp.sort' => 'asc',
+                ]);
+
+                if (!$detail->ok() || !isset($detail['d']['detailItem'])) {
+                    continue;
+                }
+
+                $transDate = $detail['d']['transDateView'] ?? '-';
+
+                foreach ($detail['d']['detailItem'] as $detailItem) {
+                    $d = $detailItem['item'] ?? null;
+                    if (!$d) continue;
+
+                    $row = [
+                        'no' => $d['no'] ?? '-',
+                        'id' => $d['id'] ?? '-',
+                        'nama_barang' => $d['name'] ?? '-',
+                        'qty' => $detailItem['quantity'] ?? 0,
+                        'st' => $detailItem['availableItemUnitName'] ?? '-',
+                        'hb_baru' => $detailItem['unitPrice'] ?? 0,
+                        'disc_fp_baru' => $detailItem['discount'] ?? 0,
+                        'hb_lama' => $d['unit1VendorPrice'] ?? 0,
+                        'itemType' => $d['itemType'] ?? 0,
+                        'tgl_transaksi' => $transDate,
+                    ];
+
+                    for ($i = 1; $i <= 5; $i++) {
+                        $unit = $d["unit{$i}"] ?? null;
+                        $unitName = $unit['name'] ?? null;
+                        $hj_lama = $d["unitPrice"] ?? 0;
+                        $hj_baru = $i === 1 ? ($d["unitPrice"] ?? 0) : ($d["unit{$i}Price"] ?? 0);
+                        $ratio = $d["ratio{$i}"] ?? null;
+
+                        if ($unitName) {
+                            $row["unit{$i}Name"] = "unit{$i}Name";
+                            $row["hj_lama{$i}"] = $hj_lama;
+                            $row["hj_baru{$i}"] = $hj_baru;
+                            $row["st{$i}"] = $unitName;
+                            $row["rs{$i}"] = $ratio;
+                        }
+                    }
+
+                    $result[] = $row;
+                }
+            }
+
+            usort($result, function ($a, $b) {
+                return strtotime($a['tgl_transaksi']) <=> strtotime($b['tgl_transaksi']);
+            });
+
+            return $result;
         });
 
         return view('accurate.analisaHargaTerakhir', [
@@ -401,9 +433,9 @@ class AccurateController extends Controller
             'dbId' => $request->dbId,
             'currentPage' => $currentPage,
             'totalPages' => $totalPages,
+            'kategori_penjualan' => $kategori_penjualan
         ]);
     }
-
 
 
 

@@ -13,7 +13,10 @@
         "laravel/sanctum": "^3.3",
         "laravel/socialite": "^5.20",
         "laravel/tinker": "^2.8",
-        "milon/barcode": "^12.0"
+        "maatwebsite/excel": "^1.1",
+        "milon/barcode": "^12.0",
+        "phpoffice/phpspreadsheet": "^4.3",
+        "spatie/simple-excel": "^3.7"
     },
     "require-dev": {
         "fakerphp/faker": "^1.9.1",
